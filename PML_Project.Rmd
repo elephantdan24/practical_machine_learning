@@ -1,0 +1,153 @@
+---
+title: "Practical_Machine_Learning_Project.Rmd"
+author: "DTCF"
+date: "10/27/2020"
+---
+
+###Background
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways.
+
+The training data for this project are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+###Instructions
+
+The goal of your project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. You may use any of the other variables to predict with. You should create a report describing how you built your model, how you used cross validation, what you think the expected out of sample error is, and why you made the choices you did. You will also use your prediction model to predict 20 different test cases.
+
+##The Process
+
+###Getting and Cleaning the Data
+
+We start by loading the necessary R packages.
+
+```{r}
+library(caret)
+library(randomForest)
+library(ggplot2)
+library(corrplot)
+library(rpart)
+library(rpart.plot)
+```
+
+Then set our working directory and load/assign the data to data frames.
+
+```{r}
+setwd("~/Desktop/Data Science Directory")
+
+pmlTraining <- read.csv("pml-training.csv")
+pmlTesting <- read.csv("pml-testing.csv")
+```
+
+We'll set the Testing data aside for now and address the Training set.  We have been asked to estimate the out-of-sample error and we can do this by splitting the Training set into subsets (a new smaller Training set and a separate Test set, or Validation set).
+
+```{r}
+set.seed(1234) #For reproducibility
+
+subTrain <- createDataPartition(y = pmlTraining$classe, p = 0.7, list = FALSE)
+
+subTrain0 <- pmlTraining[subTrain, ]
+subTrain1 <- pmlTraining[-subTrain, ]
+```
+
+We should remove the variables that have virtually no variance as well as variables that are almost all NA values, and variables that logically won't affect prediction.  We will remove the same variables from subTrain0 and subTrain1.
+
+```{r}
+#Removing variable with little to no variance.
+NZV <- nearZeroVar(subTrain0)
+
+#Rename the sets
+subTrain0 <- subTrain0[, -NZV]
+subTrain1 <- subTrain1[, -NZV]
+
+#Removing NA culprits - those with 95% or higher NA returns.
+NAs <- sapply(subTrain0, function(x) mean(is.na(x))) > 0.95
+
+#Rename the sets again
+subTrain0 <- subTrain0[, NAs == FALSE]
+subTrain1 <- subTrain1[, NAs == FALSE]
+
+#Removing the illogical predictors - the first five variables in the original sets - and renaming the sets one more time.
+subTrain0 <- subTrain0[, -(1:5)]
+subTrain1 <- subTrain1[, -(1:5)]
+```
+
+###Building a Model
+
+We will start with a Random Forest model and see how we do.  We have been asked to do some cross-validation as part of this process.
+
+```{r}
+#Design the cross-validation parameters
+crossVal <- trainControl(method = "cv", number = 3, verboseIter = FALSE)
+
+#Fit a Random Forest model to the Training data (with the cross-validation thrown in)
+fit0 <- train(classe ~ ., data = subTrain0, method = "rf", trContol = crossVal)
+
+#Print the results that the function chose to use as the Final Model
+fit0$finalModel
+```
+
+Note: It used 500 Trees testing 27 variables.
+
+###Random Trees Evaluation
+
+We will run the model on our Validation set and estimate our out-of-sample error by running a Confusion Matrix on the prediction.
+
+```{r}
+pred1 <- predict(fit0, newdata = subTrain1)
+
+confusionMatrix(subTrain1$classe, pred1)
+```
+
+Note: The accuracy is 99.8% and the expected out-of-sample error is 0.2%.  I would worry about the model being over fitted, but we are meant to predict a test set for grading purposes and thus want results as accurate as possible.
+
+###Cleaning the Training and Test Sets
+
+We have to remove the same variables on the Training and Test sets that we did to the Training and Validation sets earlier.
+
+```{r}
+#Removing variable with little to no variance and renaming the sets
+NZV <- nearZeroVar(pmlTraining)
+pmlTraining <- pmlTraining[, -NZV]
+pmlTesting <- pmlTesting[, -NZV]
+
+#Removing variables that are almost all NAs and renaming the sets
+NAs <- sapply(pmlTraining, function(x) mean(is.na(x))) > 0.95
+pmlTraining <- pmlTraining[, NAs == FALSE]
+pmlTesting <- pmlTesting[, NAs == FALSE]
+
+#Removing the illogical variables and renaming the sets
+pmlTraining <- pmlTraining[, -(1:5)]
+pmlTesting <- pmlTesting[, -(1:5)]
+```
+
+And we should re-fit the model using the full-sized Training set so we have more accurate readings.
+
+```{r}
+#First the cross-validation
+crossVal <- trainControl(method = "cv", number = 3, verboseIter = FALSE)
+
+#And now the fit
+uberFit <- train(classe ~ ., data = pmlTraining, method = "rf", trControl = crossVal)
+```
+
+###Predicting the Test Set
+
+Now we will use the model we generated to make predictions using the original Test set.
+
+```{r results = "hide"}
+results <- predict(uberFit, newdata = pmlTesting)
+
+#And we can convert the results to a character vector
+results <- as.character(results)
+
+#And finally, print the results
+results
+```
+
+This should produce the answers we need for the assessment.  Wish me luck.
